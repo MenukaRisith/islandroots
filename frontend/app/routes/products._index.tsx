@@ -1,5 +1,3 @@
-// app/routes/products._index.tsx
-
 import type { LoaderFunctionArgs, MetaFunction } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import { Link, useLoaderData, useSearchParams } from "@remix-run/react";

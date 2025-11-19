@@ -25,7 +25,7 @@ export function ProductFilters() {
       <div className="flex-1">
         <label
           htmlFor="products-search"
-          className="block text-xs font-medium text-gray-500 dark:text-gray-400"
+          className="block text-m font-medium text-gray-500 dark:text-gray-400"
         >
           Search
         </label>
