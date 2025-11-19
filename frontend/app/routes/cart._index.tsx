@@ -1,3 +1,5 @@
+// app/routes/cart._index.tsx
+
 import type { MetaFunction } from "@remix-run/node";
 import { useState } from "react";
 import { AppLayout } from "~/components/layout/AppLayout";
@@ -36,6 +38,14 @@ const initialValues: CheckoutFormValues = {
   notes: "",
 };
 
+// Fields we consider “required” for the progress bar
+const REQUIRED_FIELDS: (keyof CheckoutFormValues)[] = [
+  "customerName",
+  "customerPhone",
+  "deliveryAddress",
+  "paymentPreference",
+];
+
 export default function CartIndex() {
   const { items, formattedSubtotal, updateQuantity, removeFromCart, clearCart } =
     useCart();
@@ -49,20 +59,26 @@ export default function CartIndex() {
     field: keyof CheckoutFormValues,
     value: string | PaymentPreference
   ) => {
-    setState((prev) => ({
-      ...prev,
-      values: {
+    setState((prev) => {
+      const nextValues: CheckoutFormValues = {
         ...prev.values,
         [field]: value,
-      },
-      // clear field-specific error on change
-      errors: {
-        ...prev.errors,
-        [field]: undefined,
-      },
-      submitError: undefined,
-      submittedOrderId: undefined,
-    }));
+      };
+
+      // Run validation and only update error for the changed field
+      const validationErrors = validateCheckoutForm(nextValues);
+
+      return {
+        ...prev,
+        values: nextValues,
+        errors: {
+          ...prev.errors,
+          [field]: validationErrors[field],
+        },
+        submitError: undefined,
+        submittedOrderId: undefined,
+      };
+    });
   };
 
   const handleSubmit: React.FormEventHandler<HTMLFormElement> = async (e) => {
@@ -133,6 +149,23 @@ export default function CartIndex() {
     }
   };
 
+  // --- Interactive checkout progress calculation ---
+  const completedRequired = REQUIRED_FIELDS.filter((field) => {
+    const value = state.values[field];
+    if (typeof value === "string") {
+      return value.trim().length > 0;
+    }
+    return Boolean(value);
+  }).length;
+
+  const hasItems = items.length > 0;
+  const totalSteps = REQUIRED_FIELDS.length + 1; // +1 for “cart has items”
+  const completedSteps = completedRequired + (hasItems ? 1 : 0);
+  const progressPercent =
+    totalSteps > 0
+      ? Math.min(100, Math.round((completedSteps / totalSteps) * 100))
+      : 0;
+
   return (
     <AppLayout>
       <section className="grid gap-6 md:grid-cols-[minmax(0,2fr)_minmax(0,1.1fr)]">
@@ -173,8 +206,29 @@ export default function CartIndex() {
             Order Request Details
           </h2>
 
+          {/* Interactive progress bar */}
+          <div className="space-y-1">
+            <div className="flex items-center justify-between text-[0.7rem] text-gray-500 dark:text-gray-400">
+              <span>Checkout progress</span>
+              <span>{progressPercent}% complete</span>
+            </div>
+            <div className="h-1.5 w-full overflow-hidden rounded-full bg-gray-200 dark:bg-gray-800">
+              <div
+                className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-teal-400 transition-[width]"
+                style={{ width: `${progressPercent}%` }}
+              />
+            </div>
+          </div>
+
           <div className="flex items-center justify-between text-xs text-gray-600 dark:text-gray-300">
-            <span>Items subtotal</span>
+            <span>
+              Items subtotal{" "}
+              {items.length > 0 && (
+                <span className="text-[0.7rem] text-gray-400">
+                  · {items.length} item{items.length === 1 ? "" : "s"}
+                </span>
+              )}
+            </span>
             <span className="font-semibold text-emerald-600 dark:text-emerald-400">
               {formattedSubtotal}
             </span>
@@ -425,13 +479,16 @@ function PaymentChip({ label, value, selected, onSelect }: PaymentChipProps) {
       type="button"
       onClick={() => onSelect(value)}
       className={[
-        "inline-flex items-center rounded-full border px-3 py-1 text-[0.7rem] font-medium transition-colors",
+        "inline-flex items-center gap-1 rounded-full border px-3 py-1 text-[0.7rem] font-medium transition-colors",
         selected
           ? "border-emerald-500 bg-emerald-500/10 text-emerald-700 dark:border-emerald-400 dark:bg-emerald-900/40 dark:text-emerald-200"
           : "border-gray-200 text-gray-600 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800",
       ].join(" ")}
     >
-      {label}
+      {selected && (
+        <i className="fa-solid fa-check text-[0.65rem]" aria-hidden="true" />
+      )}
+      <span>{label}</span>
     </button>
   );
 }
