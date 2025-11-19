@@ -1,5 +1,3 @@
-// app/components/layout/Header.tsx
-
 import { Link, NavLink } from "@remix-run/react";
 import { useMemo } from "react";
 import { ROUTES } from "~/config/constants";
@@ -28,8 +26,12 @@ export function Header() {
         {/* Brand */}
         <div className="flex items-center gap-2">
           <Link to={ROUTES.HOME} className="flex items-center gap-2">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-500 text-white shadow-md shadow-emerald-500/30">
-              <span className="text-xl font-bold">IR</span>
+            <div className="flex h-9 w-auto items-center justify-center overflow-hidden rounded-xl text-white shadow-md">
+              <img
+                src="/logo.png"
+                alt="IslandRoots Market logo"
+                className="h-full w-full object-cover"
+              />
             </div>
             <div className="flex flex-col">
               <span className="text-sm font-semibold tracking-tight sm:text-base">
