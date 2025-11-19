@@ -1,7 +1,6 @@
-import type {
-  LinksFunction,
-  MetaFunction,
-} from "@remix-run/node";
+// app/root.tsx
+
+import type { LinksFunction, MetaFunction } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import {
   Links,
@@ -9,11 +8,11 @@ import {
   Outlet,
   Scripts,
   ScrollRestoration,
-  useLoaderData,
+  useRouteLoaderData,
 } from "@remix-run/react";
 import type { ReactNode } from "react";
 
-import "~/tailwind.css";
+import "./tailwind.css";
 import { getServerEnv } from "~/config/env.server";
 import { AuthProvider } from "~/context/AuthContext";
 import { CartProvider } from "~/context/CartContext";
@@ -58,7 +57,7 @@ export async function loader() {
 }
 
 export function Layout({ children }: { children: ReactNode }) {
-  const data = useLoaderData<LoaderData>();
+  const data = useRouteLoaderData<typeof loader>("root") as LoaderData | undefined;
 
   return (
     <html lang="en" className="dark">
@@ -71,12 +70,15 @@ export function Layout({ children }: { children: ReactNode }) {
         <Meta />
         <Links />
 
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `window.ENV = ${JSON.stringify(data.ENV)};`,
-          }}
-        />
+        {data?.ENV && (
+          <script
+            dangerouslySetInnerHTML={{
+              __html: `window.ENV = ${JSON.stringify(data.ENV)};`,
+            }}
+          />
+        )}
 
+        {/* FontAwesome */}
         <script
           src="https://kit.fontawesome.com/f966c5c9b1.js"
           crossOrigin="anonymous"
