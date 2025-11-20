@@ -20,6 +20,8 @@ export function Header() {
     [totalItems]
   );
 
+  const accountLinkTo = isAdmin ? ROUTES.ADMIN_HOME : ROUTES.ACCOUNT_HOME;
+
   return (
     <header className="border-b border-gray-200/60 bg-white/80 backdrop-blur dark:border-gray-800 dark:bg-[#080814]/80">
       <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3 sm:px-6 lg:px-8">
@@ -84,12 +86,12 @@ export function Header() {
             {/* Account */}
             {isAuthenticated ? (
               <Link
-                to={ROUTES.ACCOUNT_HOME}
+                to={accountLinkTo}
                 className="inline-flex items-center gap-2 rounded-full border border-gray-200 px-3 py-1 text-xs text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
               >
                 <i className="fa-regular fa-user text-sm" />
                 <span className="max-w-[120px] truncate">
-                  {user?.name || "Account"}
+                  {user?.name || (isAdmin ? "Admin dashboard" : "Account")}
                 </span>
                 {isAdmin && (
                   <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[0.65rem] font-semibold text-emerald-700 dark:bg-emerald-900/60 dark:text-emerald-300">

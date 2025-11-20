@@ -10,10 +10,7 @@ import {
 import { apiRequest } from "~/utils/api.server";
 import { useAuth } from "~/hooks/useAuth";
 
-/**
- * Shape expected from backend at GET /account/impact-summary
- * You can implement this in Express later to aggregate from orders.
- */
+
 interface ImpactSummaryApi {
   totalOrders: number;
   totalItems: number;

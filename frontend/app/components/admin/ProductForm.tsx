@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { useState, type FormEvent } from "react";
 import { TAG_KEYS, CAUSE_LABELS, type TagKey } from "~/config/constants";
 import { Button } from "~/components/ui/Button";
-import { apiClientRequest } from "~/utils/api.client";
 import type { ApiProduct } from "~/types/api";
+import { useAuth } from "~/hooks/useAuth";
 
 export type ProductFormMode = "create" | "edit";
 
@@ -48,7 +48,27 @@ const defaultValues: ProductFormValues = {
   isFeatured: false,
 };
 
-export function ProductForm({ mode, productId, initialValues }: ProductFormProps) {
+function buildProductApiUrl(path: string): string {
+  const env = (window as unknown as { ENV?: { PUBLIC_API_BASE_URL?: string } })
+    .ENV;
+
+  const base =
+    env?.PUBLIC_API_BASE_URL && env.PUBLIC_API_BASE_URL.trim().length > 0
+      ? env.PUBLIC_API_BASE_URL.trim()
+      : window.location.origin;
+
+  const trimmedBase = base.replace(/\/+$/, "");
+  const trimmedPath = path.startsWith("/") ? path : `/${path}`;
+  return `${trimmedBase}/api${trimmedPath}`;
+}
+
+export function ProductForm({
+  mode,
+  productId,
+  initialValues,
+}: ProductFormProps) {
+  const { token, isAdmin } = useAuth();
+
   const [state, setState] = useState<FormState>(() => ({
     values: { ...defaultValues, ...initialValues },
     errors: {},
@@ -113,8 +133,19 @@ export function ProductForm({ mode, productId, initialValues }: ProductFormProps
     return errors;
   };
 
-  const handleSubmit: React.FormEventHandler<HTMLFormElement> = async (e) => {
+  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+
+    if (!isAdmin || !token) {
+      setState((prev) => ({
+        ...prev,
+        submitError:
+          "You must be signed in as an admin to create or edit products.",
+        submitSuccess: undefined,
+      }));
+      return;
+    }
+
     const errors = validate(state.values);
     const hasErrors = Object.values(errors).some(Boolean);
 
@@ -143,6 +174,10 @@ export function ProductForm({ mode, productId, initialValues }: ProductFormProps
         .filter(Boolean),
     ];
 
+    const vendorIdTrimmed = state.values.vendorId.trim();
+    const vendorIdNumeric =
+      vendorIdTrimmed.length > 0 ? Number(vendorIdTrimmed) : null;
+
     const body = {
       name: state.values.name.trim(),
       category: state.values.category.trim(),
@@ -151,18 +186,63 @@ export function ProductForm({ mode, productId, initialValues }: ProductFormProps
       currency: state.values.currency.trim(),
       stock: state.values.stock ? Number(state.values.stock) : null,
       images,
-      vendorId: state.values.vendorId.trim() || null,
+      vendorId: vendorIdNumeric,
       tags: state.values.tags,
       isFeatured: state.values.isFeatured,
     };
 
     try {
+      const path =
+        mode === "create"
+          ? "/products"
+          : productId
+          ? `/products/${encodeURIComponent(productId)}`
+          : "/products";
+
+      const url = buildProductApiUrl(path);
+
+      const res = await fetch(url, {
+        method: mode === "create" ? "POST" : "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(body),
+      });
+
+      if (!res.ok) {
+        let payload: unknown = null;
+        try {
+          const ct = res.headers.get("Content-Type") ?? "";
+          if (ct.includes("application/json")) {
+            payload = await res.json();
+          } else {
+            payload = await res.text();
+          }
+        } catch {
+          // ignore
+        }
+
+        const baseMessage =
+          res.status === 403
+            ? "You are not allowed to perform this action. Make sure you are logged in as an admin."
+            : `Request failed with status ${res.status}`;
+
+        const message =
+          typeof payload === "object" &&
+          payload !== null &&
+          "message" in (payload as Record<string, unknown>) &&
+          typeof (payload as Record<string, unknown>).message === "string"
+            ? (payload as { message: string }).message
+            : baseMessage;
+
+        throw new Error(message);
+      }
+
+      const data = (await res.json()) as ApiProduct;
+
       if (mode === "create") {
-        await apiClientRequest<ApiProduct>({
-          path: "/products",
-          method: "POST",
-          body,
-        });
         setState({
           values: defaultValues,
           errors: {},
@@ -171,16 +251,6 @@ export function ProductForm({ mode, productId, initialValues }: ProductFormProps
           submitSuccess: "Product created successfully.",
         });
       } else {
-        if (!productId) {
-          throw new Error("Missing productId for edit mode");
-        }
-
-        await apiClientRequest<ApiProduct>({
-          path: `/products/${productId}`,
-          method: "PUT",
-          body,
-        });
-
         setState((prev) => ({
           ...prev,
           submitting: false,
@@ -188,13 +258,19 @@ export function ProductForm({ mode, productId, initialValues }: ProductFormProps
           submitSuccess: "Product updated successfully.",
         }));
       }
+
+      // eslint-disable-next-line no-console
+      console.log("Product saved:", data);
     } catch (err) {
-      console.error(err);
+      // eslint-disable-next-line no-console
+      console.error("Product save failed:", err);
       setState((prev) => ({
         ...prev,
         submitting: false,
         submitError:
-          "Something went wrong while saving the product. Please try again.",
+          err instanceof Error
+            ? err.message
+            : "Something went wrong while saving the product. Please try again.",
         submitSuccess: undefined,
       }));
     }
@@ -215,6 +291,12 @@ export function ProductForm({ mode, productId, initialValues }: ProductFormProps
         <p className="text-[0.7rem] text-gray-600 dark:text-gray-300">
           {subtitle}
         </p>
+        {!isAdmin && (
+          <p className="text-[0.7rem] text-amber-600 dark:text-amber-400">
+            You are currently not signed in as an admin. You will not be able
+            to save changes until you log in with an admin account.
+          </p>
+        )}
       </div>
 
       <form className="space-y-4" onSubmit={handleSubmit} noValidate>

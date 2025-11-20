@@ -8,12 +8,22 @@ import {
   type VendorFormValues,
   type AdminVendorApi,
 } from "~/components/admin/VendorForm";
-import { apiRequest } from "~/utils/api.server";
 import { TAG_KEYS, type TagKey } from "~/config/constants";
 
 interface AdminVendorEditLoaderData {
   vendorId: string;
   initialValues: Partial<VendorFormValues>;
+}
+
+// server-side API base helper
+function getApiBaseUrl(request: Request): string {
+  const url = new URL(request.url);
+  const envBase = process.env.PUBLIC_API_BASE_URL?.trim();
+
+  const base =
+    envBase && envBase.length > 0 ? envBase : `${url.protocol}//${url.host}`;
+
+  return base.replace(/\/+$/, "");
 }
 
 export const meta: MetaFunction<typeof loader> = ({ data }) => {
@@ -39,7 +49,7 @@ export const meta: MetaFunction<typeof loader> = ({ data }) => {
   ];
 };
 
-export async function loader({ params }: LoaderFunctionArgs) {
+export async function loader({ params, request }: LoaderFunctionArgs) {
   const idParam = params.id;
 
   if (!idParam) {
@@ -47,13 +57,20 @@ export async function loader({ params }: LoaderFunctionArgs) {
   }
 
   const vendorId = idParam.toString();
+  const apiBase = getApiBaseUrl(request);
 
   let vendor: AdminVendorApi;
   try {
-    vendor = await apiRequest<AdminVendorApi>({
-      path: `/vendors/${vendorId}`,
+    const res = await fetch(`${apiBase}/api/vendors/${encodeURIComponent(vendorId)}`, {
       method: "GET",
+      headers: { Accept: "application/json" },
     });
+
+    if (!res.ok) {
+      throw new Error(`Status ${res.status}`);
+    }
+
+    vendor = (await res.json()) as AdminVendorApi;
   } catch {
     throw new Response("Not found", { status: 404 });
   }
@@ -68,7 +85,7 @@ export async function loader({ params }: LoaderFunctionArgs) {
     contactEmail: vendor.contactEmail ?? "",
     instagram: vendor.instagram ?? "",
     tiktok: vendor.tiktok ?? "",
-    tags: vendor.tags
+    tags: (vendor.tags ?? [])
       .filter((t) => TAG_KEYS.includes(t as TagKey))
       .map((t) => t as TagKey),
   };

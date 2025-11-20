@@ -5,8 +5,7 @@ import { AppLayout } from "~/components/layout/AppLayout";
 import { ProductGrid } from "~/components/products/ProductGrid";
 import { ROUTES, CAUSE_LABELS, TAG_KEYS } from "~/config/constants";
 import type { TagKey } from "~/config/constants";
-import { apiRequest } from "~/utils/api.server";
-import type { ApiListResponse, ApiProduct } from "~/types/api";
+import type { ApiProduct } from "~/types/api";
 import type { Product } from "~/types/domain";
 
 interface CauseDetailLoaderData {
@@ -31,6 +30,16 @@ const DESCRIPTION_BY_TAG: Record<TagKey, string> = {
     "Items made using recycled or upcycled materials, keeping waste out of landfills.",
 };
 
+function getApiBaseUrl(request: Request): string {
+  const url = new URL(request.url);
+  const envBase = process.env.PUBLIC_API_BASE_URL?.trim();
+
+  const base =
+    envBase && envBase.length > 0 ? envBase : `${url.protocol}//${url.host}`;
+
+  return base.replace(/\/+$/, "");
+}
+
 export const meta: MetaFunction<typeof loader> = ({ data }) => {
   if (!data) {
     return [
@@ -51,7 +60,7 @@ export const meta: MetaFunction<typeof loader> = ({ data }) => {
   ];
 };
 
-export async function loader({ params }: LoaderFunctionArgs) {
+export async function loader({ params, request }: LoaderFunctionArgs) {
   const slug = params.slug;
 
   if (!slug || !TAG_KEYS.includes(slug as TagKey)) {
@@ -65,19 +74,24 @@ export async function loader({ params }: LoaderFunctionArgs) {
   let total = 0;
 
   try {
-    const res = await apiRequest<ApiListResponse<ApiProduct>>({
-      path: "/products",
+    const apiBase = getApiBaseUrl(request);
+    const url = new URL(`${apiBase}/api/products`);
+    url.searchParams.set("tag", tagKey); // matches Express: req.query.tag
+
+    const res = await fetch(url.toString(), {
       method: "GET",
-      query: {
-        causeTag: tagKey,
-        page: 1,
-        pageSize: 24,
-      },
+      headers: { Accept: "application/json" },
     });
 
-    products = res.items.map(mapApiProductToDomain);
-    total = res.total;
-  } catch {
+    if (!res.ok) {
+      throw new Error(`Failed to load products (status ${res.status})`);
+    }
+
+    const data = (await res.json()) as ApiProduct[];
+    products = data.map(mapApiProductToDomain);
+    total = products.length;
+  } catch (err) {
+    console.error("[causes.$slug] load error:", err);
     products = [];
     total = 0;
   }
@@ -158,10 +172,10 @@ function mapApiProductToDomain(api: ApiProduct): Product {
     price: api.price,
     currency: api.currency,
     stock: api.stock,
-    category: api.category,
+    category: api.category ?? "Uncategorized",
     images: api.images,
     vendorId: api.vendorId,
-    vendor: undefined, // vendor can be loaded separately if needed
+    vendor: undefined,
     tags: tagKeys,
     isFeatured: api.isFeatured,
     createdAt: api.createdAt,

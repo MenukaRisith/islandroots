@@ -1,10 +1,9 @@
-import type { MetaFunction } from "@remix-run/node";
+import type { LoaderFunctionArgs, MetaFunction } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import { useLoaderData, Link } from "@remix-run/react";
 import { AppLayout } from "~/components/layout/AppLayout";
 import { AdminLayout } from "~/components/admin/AdminLayout";
-import { apiRequest } from "~/utils/api.server";
-import type { ApiListResponse, ApiProduct } from "~/types/api";
+import type { ApiProduct } from "~/types/api";
 import type { Product } from "~/types/domain";
 import { TAG_KEYS, CAUSE_LABELS, ROUTES } from "~/config/constants";
 import type { TagKey } from "~/config/constants";
@@ -23,23 +22,41 @@ export const meta: MetaFunction = () => [
   },
 ];
 
-export async function loader() {
+// Helper to build the API base URL on the server (no window)
+function getApiBaseUrl(request: Request): string {
+  const url = new URL(request.url);
+  const envBase = process.env.PUBLIC_API_BASE_URL?.trim();
+
+  const base =
+    envBase && envBase.length > 0 ? envBase : `${url.protocol}//${url.host}`;
+
+  return base.replace(/\/+$/, "");
+}
+
+export async function loader({ request }: LoaderFunctionArgs) {
   let products: Product[] = [];
   let total = 0;
 
   try {
-    const res = await apiRequest<ApiListResponse<ApiProduct>>({
-      path: "/products",
+    const apiBase = getApiBaseUrl(request);
+    const url = new URL(`${apiBase}/api/products`);
+
+    const res = await fetch(url.toString(), {
       method: "GET",
-      query: {
-        page: 1,
-        pageSize: 50,
+      headers: {
+        Accept: "application/json",
       },
     });
 
-    products = res.items.map(mapApiProductToDomain);
-    total = res.total;
-  } catch {
+    if (!res.ok) {
+      throw new Error(`Failed to load products (status ${res.status})`);
+    }
+
+    const apiProducts = (await res.json()) as ApiProduct[];
+    products = apiProducts.map(mapApiProductToDomain);
+    total = products.length;
+  } catch (err) {
+    console.error("[admin.products._index] error loading products:", err);
     products = [];
     total = 0;
   }
@@ -123,7 +140,7 @@ export default function AdminProductsIndexRoute() {
                                 {p.name}
                               </p>
                               <p className="text-[0.65rem] text-gray-500 dark:text-gray-400">
-                                {p.category}
+                                {p.category || "—"}
                               </p>
                             </div>
                           </div>
@@ -157,7 +174,9 @@ export default function AdminProductsIndexRoute() {
                         </td>
                         <td className="px-3 py-2">
                           <p className="text-[0.65rem] text-gray-500 dark:text-gray-400">
-                            {new Date(p.updatedAt).toLocaleDateString("en-LK")}
+                            {p.updatedAt
+                              ? new Date(p.updatedAt).toLocaleDateString("en-LK")
+                              : "—"}
                           </p>
                         </td>
                         <td className="px-3 py-2">
@@ -197,7 +216,7 @@ function mapApiProductToDomain(api: ApiProduct): Product {
     price: api.price,
     currency: api.currency,
     stock: api.stock,
-    category: api.category,
+    category: api.category ?? "", // always a string, TS-safe
     images: api.images,
     vendorId: api.vendorId,
     vendor: undefined,

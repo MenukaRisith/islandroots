@@ -22,7 +22,8 @@ export const meta: MetaFunction = () => [
 
 interface CheckoutState {
   values: CheckoutFormValues;
-  errors: Record<string, string | undefined>;
+  // key is always one of the CheckoutFormValues fields
+  errors: Partial<Record<keyof CheckoutFormValues, string>>;
   submitting: boolean;
   submittedOrderId?: string;
   submitError?: string;
@@ -49,6 +50,7 @@ const REQUIRED_FIELDS: (keyof CheckoutFormValues)[] = [
 export default function CartIndex() {
   const { items, formattedSubtotal, updateQuantity, removeFromCart, clearCart } =
     useCart();
+
   const [state, setState] = useState<CheckoutState>({
     values: initialValues,
     errors: {},
@@ -62,7 +64,7 @@ export default function CartIndex() {
     setState((prev) => {
       const nextValues: CheckoutFormValues = {
         ...prev.values,
-        [field]: value,
+        [field]: value as CheckoutFormValues[typeof field],
       };
 
       // Run validation and only update error for the changed field
@@ -83,6 +85,7 @@ export default function CartIndex() {
 
   const handleSubmit: React.FormEventHandler<HTMLFormElement> = async (e) => {
     e.preventDefault();
+
     if (items.length === 0) {
       setState((prev) => ({
         ...prev,
@@ -139,7 +142,8 @@ export default function CartIndex() {
         submittedOrderId: res.orderId,
         submitError: undefined,
       });
-    } catch {
+    } catch (err) {
+      console.error("[cart._index] order submit failed:", err);
       setState((prev) => ({
         ...prev,
         submitting: false,

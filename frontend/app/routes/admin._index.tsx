@@ -1,6 +1,6 @@
 // app/routes/admin._index.tsx
 
-import type { MetaFunction } from "@remix-run/node";
+import type { LoaderFunctionArgs, MetaFunction } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import { useLoaderData } from "@remix-run/react";
 import { AppLayout } from "~/components/layout/AppLayout";
@@ -16,6 +16,43 @@ interface AdminOverviewData {
   };
 }
 
+// Minimal shape just for counting orders
+interface AdminOrderLite {
+  status?: string;
+}
+
+interface AdminOrdersListApi {
+  items: AdminOrderLite[];
+  total: number;
+}
+
+// 🔐 Adjust this if your cookie name is different
+const AUTH_COOKIE_NAME = "token";
+
+// Build API base URL for SSR
+function getApiBaseUrl(request: Request): string {
+  const url = new URL(request.url);
+  const envBase = process.env.PUBLIC_API_BASE_URL?.trim();
+  const base =
+    envBase && envBase.length > 0 ? envBase : `${url.protocol}//${url.host}`;
+  return base.replace(/\/+$/, "");
+}
+
+// Extract bearer token from Cookie header
+function getAuthTokenFromRequest(request: Request): string | null {
+  const cookieHeader = request.headers.get("Cookie");
+  if (!cookieHeader) return null;
+
+  const cookies = cookieHeader.split(";").map((c) => c.trim());
+  for (const cookie of cookies) {
+    const [name, ...rest] = cookie.split("=");
+    if (name === AUTH_COOKIE_NAME) {
+      return decodeURIComponent(rest.join("="));
+    }
+  }
+  return null;
+}
+
 export const meta: MetaFunction = () => [
   { title: "Admin – IslandRoots Market" },
   {
@@ -25,8 +62,15 @@ export const meta: MetaFunction = () => [
   },
 ];
 
-export async function loader() {
-  // For now, static placeholders – you can later call your backend for real stats
+export async function loader({ request }: LoaderFunctionArgs) {
+  const apiBase = getApiBaseUrl(request);
+  const token = getAuthTokenFromRequest(request);
+
+  const authHeaders =
+    token != null
+      ? { Authorization: `Bearer ${token}` }
+      : ({} as Record<string, string>);
+
   const totals: AdminOverviewData["totals"] = {
     products: 0,
     ordersPending: 0,
@@ -34,12 +78,79 @@ export async function loader() {
     vendors: 0,
   };
 
+  try {
+    const [productsRes, ordersRes, vendorsRes] = await Promise.all([
+      fetch(`${apiBase}/api/products`, {
+        method: "GET",
+        headers: {
+          Accept: "application/json",
+          ...authHeaders,
+        },
+      }),
+      fetch(`${apiBase}/api/orders?page=1&pageSize=50`, {
+        method: "GET",
+        headers: {
+          Accept: "application/json",
+          ...authHeaders,
+        },
+      }),
+      fetch(`${apiBase}/api/vendors`, {
+        method: "GET",
+        headers: {
+          Accept: "application/json",
+          ...authHeaders,
+        },
+      }),
+    ]);
+
+    // Products – assume array response
+    if (productsRes.ok) {
+      const productsJson = (await productsRes.json()) as unknown[];
+      totals.products = productsJson.length;
+    }
+
+    // Orders – handle both array and { items, total } shapes
+    if (ordersRes.ok) {
+      const raw = (await ordersRes.json()) as
+        | AdminOrdersListApi
+        | AdminOrderLite[];
+
+      let items: AdminOrderLite[] = [];
+      let total = 0;
+
+      if (Array.isArray(raw)) {
+        items = raw;
+        total = items.length;
+      } else {
+        items = Array.isArray(raw.items) ? raw.items : [];
+        total =
+          typeof raw.total === "number" && raw.total > 0
+            ? raw.total
+            : items.length;
+      }
+
+      totals.ordersAll = total;
+      totals.ordersPending = items.filter((o) =>
+        (o.status ?? "").toUpperCase().includes("PENDING")
+      ).length;
+    }
+
+    // Vendors – assume array response
+    if (vendorsRes.ok) {
+      const vendorsJson = (await vendorsRes.json()) as unknown[];
+      totals.vendors = vendorsJson.length;
+    }
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error("[admin._index] Error loading admin overview:", err);
+  }
+
   return json<AdminOverviewData>({ totals });
 }
 
 export default function AdminIndexRoute() {
   const { totals } = useLoaderData<AdminOverviewData>();
-  const { user } = useAuth(); // Client-side; you can later guard this route by role
+  const { user } = useAuth();
 
   return (
     <AppLayout>

@@ -38,9 +38,10 @@ function buildClientUrl(
 ): string {
   const { PUBLIC_API_BASE_URL } = getClientEnv();
 
+  const apiPrefix = "/api";
   const trimmedBase = PUBLIC_API_BASE_URL.replace(/\/+$/, "");
   const trimmedPath = path.startsWith("/") ? path : `/${path}`;
-  const url = new URL(trimmedBase + trimmedPath);
+  const url = new URL(trimmedBase + apiPrefix + trimmedPath);
 
   if (query) {
     for (const [key, value] of Object.entries(query)) {

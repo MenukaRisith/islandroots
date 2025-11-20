@@ -1,9 +1,8 @@
-import type { MetaFunction } from "@remix-run/node";
+import type { LoaderFunctionArgs, MetaFunction } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import { Link, useLoaderData } from "@remix-run/react";
 import { AppLayout } from "~/components/layout/AppLayout";
 import { AdminLayout } from "~/components/admin/AdminLayout";
-import { apiRequest } from "~/utils/api.server";
 import {
   ROUTES,
   CAUSE_LABELS,
@@ -20,16 +19,43 @@ export const meta: MetaFunction = () => [
   { title: "Admin – Makers | IslandRoots Market" },
   {
     name: "description",
-    content:
-      "Manage makers and student creators on IslandRoots Market.",
+    content: "Manage makers and student creators on IslandRoots Market.",
   },
 ];
 
-export async function loader() {
-  const vendors = await apiRequest<AdminVendorApi[]>({
-    path: "/vendors",
-    method: "GET",
-  });
+// Helper to build the base URL on the server (no window)
+function getApiBaseUrl(request: Request): string {
+  const url = new URL(request.url);
+  const envBase = process.env.PUBLIC_API_BASE_URL?.trim();
+
+  const base =
+    envBase && envBase.length > 0 ? envBase : `${url.protocol}//${url.host}`;
+
+  return base.replace(/\/+$/, "");
+}
+
+export async function loader({ request }: LoaderFunctionArgs) {
+  const apiBase = getApiBaseUrl(request);
+
+  let vendors: AdminVendorApi[] = [];
+
+  try {
+    const res = await fetch(`${apiBase}/api/vendors`, {
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+      },
+    });
+
+    if (!res.ok) {
+      throw new Error(`Failed to load vendors (status ${res.status})`);
+    }
+
+    vendors = (await res.json()) as AdminVendorApi[];
+  } catch (err) {
+    console.error("[admin.vendors._index] error loading vendors:", err);
+    vendors = [];
+  }
 
   return json<AdminVendorsIndexLoaderData>({ vendors });
 }
@@ -47,8 +73,8 @@ export default function AdminVendorsIndexRoute() {
                 Makers
               </h1>
               <p className="text-xs text-gray-600 dark:text-gray-300">
-                Profiles for Sri Lankan small businesses, rural collectives
-                and student creators.
+                Profiles for Sri Lankan small businesses, rural collectives and
+                student creators.
               </p>
             </div>
 
@@ -116,17 +142,18 @@ export default function AdminVendorsIndexRoute() {
                       </td>
                       <td className="px-3 py-2 align-top">
                         <div className="flex flex-wrap gap-1">
-                          {vendor.tags
-                            .filter((t) => TAG_KEYS.includes(t as TagKey))
-                            .map((tag) => (
-                              <span
-                                key={tag}
-                                className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-[0.6rem] text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-100"
-                              >
-                                {CAUSE_LABELS[tag as TagKey]}
-                              </span>
-                            ))}
-                          {vendor.tags.length === 0 && (
+                          {vendor.tags &&
+                            vendor.tags
+                              .filter((t) => TAG_KEYS.includes(t as TagKey))
+                              .map((tag) => (
+                                <span
+                                  key={tag}
+                                  className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-[0.6rem] text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-100"
+                                >
+                                  {CAUSE_LABELS[tag as TagKey]}
+                                </span>
+                              ))}
+                          {(!vendor.tags || vendor.tags.length === 0) && (
                             <span className="text-[0.65rem] text-gray-400">
                               No tags
                             </span>

@@ -2,6 +2,7 @@ import type { MetaFunction } from "@remix-run/node";
 import { AppLayout } from "~/components/layout/AppLayout";
 import { AdminLayout } from "~/components/admin/AdminLayout";
 import { ProductForm } from "~/components/admin/ProductForm";
+import type { ProductFormValues } from "~/components/admin/ProductForm";
 
 export const meta: MetaFunction = () => [
   { title: "Admin – New Product | IslandRoots Market" },
@@ -12,12 +13,26 @@ export const meta: MetaFunction = () => [
   },
 ];
 
+const defaultInitialValues: Partial<ProductFormValues> = {
+  name: "",
+  category: "",
+  description: "",
+  price: "",
+  currency: "LKR",
+  stock: "",
+  mainImage: "",
+  galleryImages: "",
+  vendorId: "",
+  tags: [],
+  isFeatured: false,
+};
+
 export default function AdminProductsNewRoute() {
   return (
     <AppLayout>
       <AdminLayout>
         <section className="space-y-4">
-          <ProductForm mode="create" />
+          <ProductForm mode="create" initialValues={defaultInitialValues} />
         </section>
       </AdminLayout>
     </AppLayout>

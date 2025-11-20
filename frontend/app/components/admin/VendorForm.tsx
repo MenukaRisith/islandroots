@@ -1,11 +1,11 @@
-import { useState } from "react";
+import { useState, type FormEvent } from "react";
 import { Button } from "~/components/ui/Button";
 import {
   TAG_KEYS,
   CAUSE_LABELS,
   type TagKey,
 } from "~/config/constants";
-import { apiClientRequest } from "~/utils/api.client";
+import { useAuth } from "~/hooks/useAuth";
 
 export type VendorFormMode = "create" | "edit";
 
@@ -65,7 +65,24 @@ export interface AdminVendorApi {
   updatedAt: string;
 }
 
+// Build /api/vendors URL on the client (like ProductForm)
+function buildVendorApiUrl(path: string): string {
+  const env = (window as unknown as { ENV?: { PUBLIC_API_BASE_URL?: string } })
+    .ENV;
+
+  const base =
+    env?.PUBLIC_API_BASE_URL && env.PUBLIC_API_BASE_URL.trim().length > 0
+      ? env.PUBLIC_API_BASE_URL.trim()
+      : window.location.origin;
+
+  const trimmedBase = base.replace(/\/+$/, "");
+  const trimmedPath = path.startsWith("/") ? path : `/${path}`;
+  return `${trimmedBase}/api${trimmedPath}`;
+}
+
 export function VendorForm({ mode, vendorId, initialValues }: VendorFormProps) {
+  const { token, isAdmin } = useAuth();
+
   const [state, setState] = useState<VendorFormState>(() => ({
     values: { ...defaultValues, ...initialValues },
     errors: {},
@@ -112,15 +129,29 @@ export function VendorForm({ mode, vendorId, initialValues }: VendorFormProps) {
       errors.slug = "Use only lowercase letters, numbers and dashes.";
     }
 
-    if (values.contactEmail && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(values.contactEmail)) {
+    if (
+      values.contactEmail &&
+      !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(values.contactEmail)
+    ) {
       errors.contactEmail = "Enter a valid email address.";
     }
 
     return errors;
   };
 
-  const handleSubmit: React.FormEventHandler<HTMLFormElement> = async (e) => {
+  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+
+    if (!isAdmin || !token) {
+      setState((prev) => ({
+        ...prev,
+        submitError:
+          "You must be signed in as an admin to create or edit makers.",
+        submitSuccess: undefined,
+      }));
+      return;
+    }
+
     const errors = validate(state.values);
     const hasErrors = Object.values(errors).some(Boolean);
 
@@ -155,13 +186,57 @@ export function VendorForm({ mode, vendorId, initialValues }: VendorFormProps) {
     };
 
     try {
-      if (mode === "create") {
-        await apiClientRequest<AdminVendorApi>({
-          path: "/vendors",
-          method: "POST",
-          body,
-        });
+      const path =
+        mode === "create"
+          ? "/vendors"
+          : vendorId
+          ? `/vendors/${encodeURIComponent(vendorId)}`
+          : "/vendors";
 
+      const url = buildVendorApiUrl(path);
+
+      const res = await fetch(url, {
+        method: mode === "create" ? "POST" : "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(body),
+      });
+
+      if (!res.ok) {
+        let payload: unknown = null;
+        try {
+          const ct = res.headers.get("Content-Type") ?? "";
+          if (ct.includes("application/json")) {
+            payload = await res.json();
+          } else {
+            payload = await res.text();
+          }
+        } catch {
+          // ignore
+        }
+
+        const baseMessage =
+          res.status === 403
+            ? "You are not allowed to perform this action. Make sure you are logged in as an admin."
+            : `Request failed with status ${res.status}`;
+
+        const message =
+          typeof payload === "object" &&
+          payload !== null &&
+          "message" in (payload as Record<string, unknown>) &&
+          typeof (payload as Record<string, unknown>).message === "string"
+            ? (payload as { message: string }).message
+            : baseMessage;
+
+        throw new Error(message);
+      }
+
+      const data = (await res.json()) as AdminVendorApi;
+
+      if (mode === "create") {
         setState({
           values: defaultValues,
           errors: {},
@@ -170,16 +245,6 @@ export function VendorForm({ mode, vendorId, initialValues }: VendorFormProps) {
           submitSuccess: "Maker created successfully.",
         });
       } else {
-        if (!vendorId) {
-          throw new Error("Missing vendorId for edit mode");
-        }
-
-        await apiClientRequest<AdminVendorApi>({
-          path: `/vendors/${vendorId}`,
-          method: "PUT",
-          body,
-        });
-
         setState((prev) => ({
           ...prev,
           submitting: false,
@@ -187,12 +252,19 @@ export function VendorForm({ mode, vendorId, initialValues }: VendorFormProps) {
           submitSuccess: "Maker updated successfully.",
         }));
       }
+
+      // eslint-disable-next-line no-console
+      console.log("Maker saved:", data);
     } catch (error) {
-      console.error(error);
+      // eslint-disable-next-line no-console
+      console.error("Maker save failed:", error);
       setState((prev) => ({
         ...prev,
         submitting: false,
-        submitError: "Something went wrong. Please try again.",
+        submitError:
+          error instanceof Error
+            ? error.message
+            : "Something went wrong. Please try again.",
         submitSuccess: undefined,
       }));
     }
@@ -213,6 +285,12 @@ export function VendorForm({ mode, vendorId, initialValues }: VendorFormProps) {
         <p className="text-[0.7rem] text-gray-600 dark:text-gray-300">
           {subtitle}
         </p>
+        {!isAdmin && (
+          <p className="text-[0.7rem] text-amber-600 dark:text-amber-400">
+            You are currently not signed in as an admin. You will not be able to
+            save changes until you log in with an admin account.
+          </p>
+        )}
       </div>
 
       <form className="space-y-4" onSubmit={handleSubmit} noValidate>

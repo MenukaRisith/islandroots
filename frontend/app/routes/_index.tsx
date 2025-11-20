@@ -236,7 +236,7 @@ function mapApiProductToDomain(api: ApiProduct): Product {
     price: api.price,
     currency: api.currency,
     stock: api.stock,
-    category: api.category,
+    category: api.category ?? "Uncategorized",
     images: api.images,
     vendorId: api.vendorId,
     vendor: undefined, // you can populate this if your API includes vendor data

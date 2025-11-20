@@ -6,8 +6,7 @@ import { useLoaderData } from "@remix-run/react";
 import { AppLayout } from "~/components/layout/AppLayout";
 import { ProductDetailInfo } from "~/components/products/ProductDetailInfo";
 import { RelatedProducts } from "~/components/products/RelatedProducts";
-import { apiRequest } from "~/utils/api.server";
-import type { ApiProduct, ApiListResponse } from "~/types/api";
+import type { ApiProduct } from "~/types/api";
 import type { Product } from "~/types/domain";
 import { TAG_KEYS } from "~/config/constants";
 import type { TagKey } from "~/config/constants";
@@ -15,6 +14,17 @@ import type { TagKey } from "~/config/constants";
 interface ProductDetailLoaderData {
   product: Product;
   related: Product[];
+}
+
+// Helper to build backend base URL on the server
+function getApiBaseUrl(request: Request): string {
+  const url = new URL(request.url);
+  const envBase = process.env.PUBLIC_API_BASE_URL?.trim();
+
+  const base =
+    envBase && envBase.length > 0 ? envBase : `${url.protocol}//${url.host}`;
+
+  return base.replace(/\/+$/, "");
 }
 
 export const meta: MetaFunction<typeof loader> = ({ data }) => {
@@ -34,40 +44,65 @@ export const meta: MetaFunction<typeof loader> = ({ data }) => {
   ];
 };
 
-export async function loader({ params }: LoaderFunctionArgs) {
+export async function loader({ params, request }: LoaderFunctionArgs) {
   const slug = params.slug;
   if (!slug) {
     throw new Response("Not found", { status: 404 });
   }
 
+  const apiBase = getApiBaseUrl(request);
+
   let product: Product;
   let related: Product[] = [];
 
+  // 1) Load the main product
   try {
-    const apiProduct = await apiRequest<ApiProduct>({
-      path: `/products/${slug}`,
-      method: "GET",
-    });
+    const productRes = await fetch(
+      `${apiBase}/api/products/${encodeURIComponent(slug)}`,
+      {
+        method: "GET",
+        headers: { Accept: "application/json" },
+      }
+    );
 
+    if (!productRes.ok) {
+      throw new Error(`Status ${productRes.status}`);
+    }
+
+    const apiProduct = (await productRes.json()) as ApiProduct;
     product = mapApiProductToDomain(apiProduct);
   } catch {
     throw new Response("Not found", { status: 404 });
   }
 
-  // Fetch related products (adjust this to match your backend later)
+  // 2) Load related products from /products
   try {
-    const relatedRes = await apiRequest<ApiListResponse<ApiProduct>>({
-      path: "/products",
+    const relatedRes = await fetch(`${apiBase}/api/products`, {
       method: "GET",
-      query: {
-        relatedTo: product.id,
-        limit: 6,
-      },
+      headers: { Accept: "application/json" },
     });
 
-    related = relatedRes.items
-      .filter((item) => item.id !== product.id)
-      .map(mapApiProductToDomain);
+    if (relatedRes.ok) {
+      const apiProducts = (await relatedRes.json()) as ApiProduct[];
+
+      // Simple related logic: share at least one tag or same category
+      const productTagSet = new Set(product.tags);
+      const relatedAll = apiProducts
+        .filter((p) => p.slug !== product.slug)
+        .map(mapApiProductToDomain)
+        .filter((p) => {
+          const sharesTag = p.tags.some((t) => productTagSet.has(t));
+          const sameCategory =
+            p.category && product.category
+              ? p.category === product.category
+              : false;
+          return sharesTag || sameCategory;
+        });
+
+      related = relatedAll.slice(0, 6);
+    } else {
+      related = [];
+    }
   } catch {
     related = [];
   }
@@ -101,10 +136,9 @@ function mapApiProductToDomain(api: ApiProduct): Product {
     price: api.price,
     currency: api.currency,
     stock: api.stock,
-    category: api.category,
+    category: api.category ?? "Uncategorized",
     images: api.images,
     vendorId: api.vendorId,
-    // For now we don't hydrate vendor here; can be loaded separately by vendorId
     vendor: undefined,
     tags: tagKeys,
     isFeatured: api.isFeatured,

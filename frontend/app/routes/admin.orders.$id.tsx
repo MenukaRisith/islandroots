@@ -4,7 +4,6 @@ import { useLoaderData, Link } from "@remix-run/react";
 import { useState } from "react";
 import { AppLayout } from "~/components/layout/AppLayout";
 import { AdminLayout } from "~/components/admin/AdminLayout";
-import { apiRequest } from "~/utils/api.server";
 import { apiClientRequest } from "~/utils/api.client";
 import {
   ROUTES,
@@ -68,17 +67,52 @@ export const meta: MetaFunction<typeof loader> = ({ data }) => {
   ];
 };
 
-export async function loader({ params }: LoaderFunctionArgs) {
+// Helper to build API base URL on the server
+function getApiBaseUrl(request: Request): string {
+  const url = new URL(request.url);
+  const envBase = process.env.PUBLIC_API_BASE_URL?.trim();
+
+  const base =
+    envBase && envBase.length > 0 ? envBase : `${url.protocol}//${url.host}`;
+
+  return base.replace(/\/+$/, "");
+}
+
+export async function loader({ params, request }: LoaderFunctionArgs) {
   const idParam = params.id;
 
   if (!idParam) {
     throw new Response("Not found", { status: 404 });
   }
 
-  const order = await apiRequest<AdminOrderDetailApi>({
-    path: `/orders/${idParam}`,
-    method: "GET",
-  });
+  const apiBase = getApiBaseUrl(request);
+
+  let order: AdminOrderDetailApi;
+
+  try {
+    const res = await fetch(
+      `${apiBase}/api/orders/${encodeURIComponent(idParam)}`,
+      {
+        method: "GET",
+        headers: {
+          Accept: "application/json",
+        },
+      }
+    );
+
+    if (!res.ok) {
+      if (res.status === 404) {
+        throw new Response("Not found", { status: 404 });
+      }
+      throw new Error(`Failed to load order (status ${res.status})`);
+    }
+
+    order = (await res.json()) as AdminOrderDetailApi;
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error("[admin.orders.$id] error loading order:", err);
+    throw new Response("Not found", { status: 404 });
+  }
 
   return json<OrderDetailLoaderData>({ order });
 }
@@ -146,7 +180,7 @@ export default function AdminOrderDetailRoute() {
 
             <div className="flex flex-col items-end gap-2 text-xs">
               <StatusBadge status={order.status} />
-              {/* WhatsApp CTA as <a>, not Button with `as` prop */}
+              {/* WhatsApp CTA */}
               <a
                 href={whatsappLink}
                 target="_blank"

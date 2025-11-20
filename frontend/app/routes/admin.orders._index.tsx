@@ -1,11 +1,10 @@
 // app/routes/admin.orders._index.tsx
 
-import type { MetaFunction } from "@remix-run/node";
+import type { LoaderFunctionArgs, MetaFunction } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import { useLoaderData, Link } from "@remix-run/react";
 import { AppLayout } from "~/components/layout/AppLayout";
 import { AdminLayout } from "~/components/admin/AdminLayout";
-import { apiRequest } from "~/utils/api.server";
 import { ROUTES } from "~/config/constants";
 
 type OrderStatus = "PENDING" | "CONTACTED" | "COMPLETED" | "CANCELLED";
@@ -32,6 +31,35 @@ interface AdminOrdersLoaderData {
   total: number;
 }
 
+// 🔐 cookie name for your JWT / session token (change if needed)
+const AUTH_COOKIE_NAME = "token";
+
+// Helper to build API base URL on the server (no window)
+function getApiBaseUrl(request: Request): string {
+  const url = new URL(request.url);
+  const envBase = process.env.PUBLIC_API_BASE_URL?.trim();
+
+  const base =
+    envBase && envBase.length > 0 ? envBase : `${url.protocol}//${url.host}`;
+
+  return base.replace(/\/+$/, "");
+}
+
+// Extract bearer token from cookies
+function getAuthTokenFromRequest(request: Request): string | null {
+  const cookieHeader = request.headers.get("Cookie");
+  if (!cookieHeader) return null;
+
+  const cookies = cookieHeader.split(";").map((c) => c.trim());
+  for (const cookie of cookies) {
+    const [name, ...rest] = cookie.split("=");
+    if (name === AUTH_COOKIE_NAME) {
+      return decodeURIComponent(rest.join("="));
+    }
+  }
+  return null;
+}
+
 export const meta: MetaFunction = () => [
   { title: "Admin – Orders | IslandRoots Market" },
   {
@@ -41,23 +69,52 @@ export const meta: MetaFunction = () => [
   },
 ];
 
-export async function loader() {
+export async function loader({ request }: LoaderFunctionArgs) {
+  const apiBase = getApiBaseUrl(request);
+  const token = getAuthTokenFromRequest(request);
+
+  const authHeaders =
+    token != null
+      ? { Authorization: `Bearer ${token}` }
+      : ({} as Record<string, string>);
+
   let orders: AdminOrderApi[] = [];
   let total = 0;
 
   try {
-    const res = await apiRequest<AdminOrdersListApi>({
-      path: "/orders",
+    const url = new URL(`${apiBase}/api/orders`);
+    url.searchParams.set("page", "1");
+    url.searchParams.set("pageSize", "50");
+
+    const res = await fetch(url.toString(), {
       method: "GET",
-      query: {
-        page: 1,
-        pageSize: 50,
+      headers: {
+        Accept: "application/json",
+        ...authHeaders,
       },
     });
 
-    orders = res.items;
-    total = res.total;
-  } catch {
+    if (!res.ok) {
+      throw new Error(`Failed to load orders (status ${res.status})`);
+    }
+
+    const raw = (await res.json()) as AdminOrdersListApi | AdminOrderApi[];
+
+    if (Array.isArray(raw)) {
+      // If backend returns a simple array
+      orders = raw;
+      total = raw.length;
+    } else {
+      // If backend returns { items, total }
+      orders = raw.items ?? [];
+      total =
+        typeof raw.total === "number" && raw.total > 0
+          ? raw.total
+          : orders.length;
+    }
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error("[admin.orders._index] error loading orders:", err);
     orders = [];
     total = 0;
   }
@@ -80,9 +137,9 @@ export default function AdminOrdersIndexRoute() {
               Order requests
             </h1>
             <p className="max-w-xl text-xs text-gray-600 dark:text-gray-300 sm:text-sm">
-              These orders were placed without online payments. Contact customers
-              via phone or WhatsApp to confirm details and then update the
-              status.
+              These orders were placed without online payments. Contact
+              customers via phone or WhatsApp to confirm details and then update
+              the status.
             </p>
           </div>
 

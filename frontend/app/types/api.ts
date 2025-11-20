@@ -34,7 +34,7 @@ export interface ApiProduct {
   price: number;
   currency: CurrencyCode;
   stock: number;
-  category: string;
+  category?: string | null;
   images: string[];
   vendorId?: ID;
   tags: string[]; // raw string tag keys from backend

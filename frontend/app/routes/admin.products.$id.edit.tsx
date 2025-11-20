@@ -46,8 +46,9 @@ export async function loader({ params }: LoaderFunctionArgs) {
 
   let apiProduct: ApiProduct;
   try {
+    // Backend should support GET /products/:id for admin edit
     apiProduct = await apiRequest<ApiProduct>({
-      path: `/products/${productId}`,
+      path: `/products/${encodeURIComponent(productId)}`,
       method: "GET",
     });
   } catch {
@@ -56,7 +57,9 @@ export async function loader({ params }: LoaderFunctionArgs) {
 
   const initialValues: Partial<ProductFormValues> = {
     name: apiProduct.name,
-    category: apiProduct.category,
+    // fix: coerce null -> "" so it matches `string | undefined`
+    category:
+      typeof apiProduct.category === "string" ? apiProduct.category : "",
     description: apiProduct.description,
     price: apiProduct.price != null ? String(apiProduct.price) : "",
     currency: apiProduct.currency ?? "LKR",
@@ -67,11 +70,10 @@ export async function loader({ params }: LoaderFunctionArgs) {
       apiProduct.images.length > 1
         ? apiProduct.images.slice(1).join("\n")
         : "",
-    // ✅ FIX: convert numeric ID to string for the form
     vendorId:
       apiProduct.vendorId != null ? String(apiProduct.vendorId) : "",
     tags: apiProduct.tags
-      .filter((t) => TAG_KEYS.includes(t as TagKey))
+      .filter((t): t is TagKey => TAG_KEYS.includes(t as TagKey))
       .map((t) => t as TagKey),
     isFeatured: Boolean(apiProduct.isFeatured),
   };
