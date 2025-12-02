@@ -77,7 +77,7 @@ PUBLIC_API_BASE_URL=
 
 ### 1️⃣ Clone the repository
 ```bash
-git clone [https://github.com/your-username/island_roots.git](https://github.com/your-username/island_roots.git)
+git clone [https://github.com/MenukaRisith/islandroots.git](https://github.com/MenukaRisith/islandroots.git)
 cd island_roots
 ```
 
