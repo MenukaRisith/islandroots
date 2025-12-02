@@ -85,7 +85,6 @@ cd island_roots
 ```
 cd backend
 npm install
-npx prisma migrate dev
 npm run dev
 ```
 
